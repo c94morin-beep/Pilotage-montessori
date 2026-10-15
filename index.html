@@ -56,6 +56,14 @@
   .x { border: 0; background: transparent; color: transparent; cursor: pointer; font-size: 1.1rem; padding: 0 4px; line-height: 1; border-radius: 4px; }
   li:hover .x, .x:focus-visible { color: var(--muted); outline: none; }
   .x:hover { color: var(--bad); }
+  a.go { display: inline-block; margin-left: 6px; color: var(--accent); text-decoration: none; font-weight: 700; font-size: 0.85rem; border: 1px solid var(--accent-soft); background: var(--accent-soft); border-radius: 6px; padding: 0 7px; line-height: 1.5; vertical-align: 1px; white-space: nowrap; }
+  a.go:hover { background: var(--accent); color: #fff; }
+  .linkgroups { display: grid; gap: 14px; }
+  .linkgroup h2 { margin-bottom: 6px; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; }
+  .links a { display: inline-flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; text-decoration: none; color: var(--fg); font-weight: 500; font-size: 0.9rem; }
+  .links a:hover { border-color: var(--accent); color: var(--accent); }
+  .links a .x { font-size: 1rem; padding: 0 2px; }
   .confirm { font-size: 0.8rem; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
   .confirm button { font-size: 0.78rem; padding: 2px 8px; }
 
@@ -87,7 +95,7 @@
 
   /* Forms */
   input, select, button, textarea { font: inherit; color: inherit; }
-  input[type=text], input[type=number], input[type=date] { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; width: 100%; }
+  input[type=text], input[type=number], input[type=date], input[type=url] { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; width: 100%; }
   input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   form.add { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
   form.add input[type=text] { flex: 1 1 200px; }
@@ -131,6 +139,7 @@
     <button role="tab" data-view="today" aria-selected="true">Aujourd'hui</button>
     <button role="tab" data-view="plan" aria-selected="false">Plan d'action</button>
     <button role="tab" data-view="chiffres" aria-selected="false">Chiffres</button>
+    <button role="tab" data-view="liens" aria-selected="false">Liens</button>
   </nav>
 
   <!-- ===== Aujourd'hui ===== -->
@@ -146,6 +155,7 @@
       <form class="add" id="remind-form" hidden>
         <input type="text" id="remind-title" placeholder="Quoi ?" required maxlength="140">
         <input type="date" id="remind-date" required>
+        <input type="url" id="remind-url" placeholder="Lien (facultatif)" style="flex:1 1 200px">
         <button class="btn" type="submit">Ajouter</button>
       </form>
     </div>
@@ -168,10 +178,26 @@
       <form class="add" id="task-form" hidden>
         <input type="text" id="task-title" placeholder="Quoi ?" required maxlength="200">
         <input type="date" id="task-date" title="Échéance (facultatif)">
+        <input type="url" id="task-url" placeholder="Lien (facultatif)" style="flex:1 1 200px">
         <button class="btn" type="submit">Ajouter</button>
       </form>
     </div>
     <div class="small muted" id="board-progress"></div>
+  </section>
+
+  <!-- ===== Liens ===== -->
+  <section class="view" id="view-liens" hidden>
+    <div class="linkgroups" id="linkgroups"></div>
+    <div class="panel">
+      <div class="panel-head"><h2>Ajouter un lien</h2></div>
+      <form class="add" id="link-form">
+        <input type="text" id="link-name" placeholder="Nom" required maxlength="60" style="flex:1 1 140px">
+        <input type="url" id="link-url" placeholder="https://…" required style="flex:2 1 240px">
+        <input type="text" id="link-group" placeholder="Groupe (ex. Google)" list="link-groups" maxlength="40" style="flex:1 1 140px">
+        <datalist id="link-groups"></datalist>
+        <button class="btn" type="submit">Ajouter</button>
+      </form>
+    </div>
   </section>
 
   <!-- ===== Chiffres ===== -->
@@ -239,7 +265,7 @@
   ];
   const TARGET_WEEK = 11500, TARGET_MERCHANT = 630;
   const $ = (s) => document.querySelector(s);
-  const state = { taches: [], rappels: [], kpis: [], merchant: [] };
+  const state = { taches: [], rappels: [], kpis: [], merchant: [], liens: [] };
   let db = null, showDone = false, confirmId = null, view = 'today', bloc = 'semaine';
 
   const fmtEur = (n) => (n == null || isNaN(n)) ? '—' : new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n);
@@ -268,7 +294,7 @@
   function showView(v) {
     view = v; try { localStorage.setItem('pm-view', v); } catch (e) {}
     document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === v)));
-    ['today', 'plan', 'chiffres'].forEach(k => { $('#view-' + k).hidden = (k !== v); });
+    ['today', 'plan', 'chiffres', 'liens'].forEach(k => { $('#view-' + k).hidden = (k !== v); });
     if (v === 'chiffres') renderCharts();
   }
   document.querySelectorAll('nav.tabs button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
@@ -276,6 +302,8 @@
   $('#task-toggle').addEventListener('click', () => { const f = $('#task-form'); f.hidden = !f.hidden; if (!f.hidden) $('#task-title').focus(); });
   $('#toggle-done').addEventListener('click', () => { showDone = !showDone; renderBloc(); });
 
+  const safeUrl = (u) => (typeof u === 'string' && /^https?:\/\//i.test(u)) ? u : null;
+  function goLink(url, label) { const a = document.createElement('a'); a.className = 'go'; a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = (label || 'ouvrir') + ' ↗'; return a; }
   // ---------- Rendering ----------
   function render() { renderNow(); renderReminders(); renderKpis(); renderBlocTabs(); renderBloc(); renderKpiTable(); if (view === 'chiffres') renderCharts(); }
 
@@ -286,6 +314,7 @@
     li.appendChild(cb);
     const body = document.createElement('div'); body.className = 'body' + (t.priorite === 1 && !t.fait ? ' prio' : '');
     const lab = document.createElement('label'); lab.className = 'title'; lab.htmlFor = cb.id; lab.textContent = t.titre; body.appendChild(lab);
+    if (safeUrl(t.lien)) body.appendChild(goLink(t.lien, t.lienLabel));
     const parts = [];
     if (opts.showBloc) { const b = BLOCS.find(x => x.id === t.bloc); if (b) parts.push(['', b.titre]); }
     if (t.echeance && !t.fait) parts.push([dueCls(t.echeance), dueText(t.echeance)]);
@@ -327,7 +356,7 @@
       cb.addEventListener('change', () => write(db.doc('rappels/' + r.id).update({ fait: true, faitLe: todayISO() })));
       li.appendChild(cb);
       const body = document.createElement('div'); body.className = 'body';
-      const t = document.createElement('div'); t.className = 'title'; t.textContent = r.titre; body.appendChild(t);
+      const t = document.createElement('div'); t.className = 'title'; t.textContent = r.titre; if (safeUrl(r.lien)) t.appendChild(goLink(r.lien, r.lienLabel)); body.appendChild(t);
       const sub = document.createElement('div'); sub.className = 'sub'; const s = document.createElement('span'); s.className = dueCls(r.date); s.textContent = dueText(r.date); sub.appendChild(s); body.appendChild(sub);
       li.appendChild(body); ul.appendChild(li);
     }
@@ -388,6 +417,29 @@
     $('#board-progress').textContent = total ? tdone + ' / ' + total + ' tâches faites au total' : '';
   }
 
+  // Liens
+  function renderLinks() {
+    const box = $('#linkgroups'); box.textContent = '';
+    const groups = {}; state.liens.forEach(l => { const g = l.groupe || 'Autres'; (groups[g] = groups[g] || []).push(l); });
+    const names = Object.keys(groups).sort((a, b) => (groups[b][0].ordre != null ? 1 : 0) - (groups[a][0].ordre != null ? 1 : 0) || a.localeCompare(b));
+    const order = ['Google', 'Boutique', 'Outils', 'Hébergement']; names.sort((a, b) => (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b)) || a.localeCompare(b));
+    $('#link-groups').innerHTML = names.map(n => '<option value="' + n.replace(/"/g, '&quot;') + '">').join('');
+    if (!names.length) { box.innerHTML = '<div class="panel empty">Aucun lien. Importe le fichier de données ou ajoute-en ci-dessous.</div>'; return; }
+    for (const g of names) {
+      const sec = document.createElement('div'); sec.className = 'panel linkgroup'; const h = document.createElement('h2'); h.textContent = g; sec.appendChild(h);
+      const wrap = document.createElement('div'); wrap.className = 'links';
+      groups[g].sort((a, b) => (a.ordre || 99) - (b.ordre || 99) || a.nom.localeCompare(b.nom)).forEach(l => {
+        if (!safeUrl(l.url)) return;
+        const a = document.createElement('a'); a.href = l.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = l.nom;
+        if (l.note) a.title = l.note;
+        const x = document.createElement('button'); x.className = 'x'; x.type = 'button'; x.textContent = '×'; x.setAttribute('aria-label', 'Supprimer');
+        x.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation(); if (x.dataset.armed) { write(db.doc('liens/' + l.id).delete()); } else { x.dataset.armed = '1'; x.textContent = 'supprimer ?'; setTimeout(() => { delete x.dataset.armed; x.textContent = '×'; }, 2500); } });
+        a.appendChild(x); wrap.appendChild(a);
+      });
+      sec.appendChild(wrap); box.appendChild(sec);
+    }
+  }
+
   // ---------- Charts ----------
   const W = 600, H = 220, PL = 48, PR = 40, PT = 14, PB = 30;
   const svgEl = (tag, a) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const k in a) e.setAttribute(k, a[k]); return e; };
@@ -433,8 +485,9 @@
   }
 
   // ---------- Forms ----------
-  $('#remind-form').addEventListener('submit', (ev) => { ev.preventDefault(); const titre = $('#remind-title').value.trim(), date = $('#remind-date').value; if (!titre || !date) return; write(db.collection('rappels').add({ titre, date, fait: false, cree: todayISO() })).then(() => { $('#remind-title').value = ''; $('#remind-form').hidden = true; }); });
-  $('#task-form').addEventListener('submit', (ev) => { ev.preventDefault(); const titre = $('#task-title').value.trim(); if (!titre) return; write(db.collection('taches').add({ titre, bloc, priorite: 2, echeance: $('#task-date').value || null, fait: false, cree: todayISO(), ordre: Date.now() })).then(() => { $('#task-title').value = ''; $('#task-date').value = ''; $('#task-form').hidden = true; }); });
+  $('#remind-form').addEventListener('submit', (ev) => { ev.preventDefault(); const titre = $('#remind-title').value.trim(), date = $('#remind-date').value; if (!titre || !date) return; write(db.collection('rappels').add({ titre, date, lien: safeUrl($('#remind-url').value.trim()), fait: false, cree: todayISO() })).then(() => { $('#remind-title').value = ''; $('#remind-url').value = ''; $('#remind-form').hidden = true; }); });
+  $('#task-form').addEventListener('submit', (ev) => { ev.preventDefault(); const titre = $('#task-title').value.trim(); if (!titre) return; write(db.collection('taches').add({ titre, bloc, priorite: 2, echeance: $('#task-date').value || null, lien: safeUrl($('#task-url').value.trim()), fait: false, cree: todayISO(), ordre: Date.now() })).then(() => { $('#task-title').value = ''; $('#task-date').value = ''; $('#task-url').value = ''; $('#task-form').hidden = true; });
+  $('#link-form').addEventListener('submit', (ev) => { ev.preventDefault(); const nom = $('#link-name').value.trim(), url = safeUrl($('#link-url').value.trim()), groupe = $('#link-group').value.trim() || 'Autres'; if (!nom || !url) { setStatus('Le lien doit commencer par https://', true); return; } write(db.collection('liens').add({ nom, url, groupe })).then(() => { $('#link-name').value = ''; $('#link-url').value = ''; }); }); });
   $('#merchant-form').addEventListener('submit', (ev) => { ev.preventDefault(); const date = $('#merchant-date').value, v = Number($('#merchant-val').value); if (!date || isNaN(v)) return; write(db.doc('merchant/' + date).set({ date, produits: v })).then(() => { $('#merchant-val').value = ''; }); });
   $('#kpi-form').addEventListener('submit', (ev) => {
     ev.preventDefault(); const week = $('#k-week').value; if (!week) return;
@@ -447,7 +500,7 @@
   // ---------- Local store ----------
   const KEY = 'pilotage-montessori-v1';
   let store = null, storageOk = true;
-  function load() { try { const raw = localStorage.getItem(KEY); if (raw) { store = JSON.parse(raw); return; } } catch (e) { storageOk = false; } store = { taches: {}, rappels: {}, kpis: {}, merchant: {} }; }
+  function load() { try { const raw = localStorage.getItem(KEY); if (raw) { store = JSON.parse(raw); return; } } catch (e) { storageOk = false; } store = { taches: {}, rappels: {}, kpis: {}, merchant: {}, liens: {} }; }
   function persist() { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { storageOk = false; } }
   const listeners = {};
   const snapOf = (col) => ({ docs: Object.keys(store[col] || {}).sort().map(id => ({ id, data: () => store[col][id] })) });
@@ -468,7 +521,7 @@
   $('#btn-import').addEventListener('click', () => $('#file-import').click());
   $('#file-import').addEventListener('change', (ev) => {
     const f = ev.target.files[0]; if (!f) return;
-    f.text().then(txt => { const d = JSON.parse(txt); if (!d || typeof d !== 'object') throw new Error('format'); store = { taches: d.taches || {}, rappels: d.rappels || {}, kpis: d.kpis || {}, merchant: d.merchant || {} }; persist(); ['taches', 'rappels', 'kpis', 'merchant'].forEach(emit); setStatus('Import réussi'); })
+    f.text().then(txt => { const d = JSON.parse(txt); if (!d || typeof d !== 'object') throw new Error('format'); store = { taches: d.taches || {}, rappels: d.rappels || {}, kpis: d.kpis || {}, merchant: d.merchant || {}, liens: d.liens || {} }; persist(); ['taches', 'rappels', 'kpis', 'merchant', 'liens'].forEach(emit); setStatus('Import réussi'); })
       .catch(() => setStatus('Fichier illisible : utilise un export de cette page.', true));
     ev.target.value = '';
   });
@@ -481,6 +534,7 @@
   db.collection('rappels').onSnapshot(s => { state.rappels = toRows(s); renderReminders(); });
   db.collection('kpis').onSnapshot(s => { state.kpis = toRows(s); renderKpis(); renderKpiTable(); if (view === 'chiffres') renderCharts(); });
   db.collection('merchant').onSnapshot(s => { state.merchant = toRows(s); renderKpis(); if (view === 'chiffres') renderCharts(); });
+  db.collection('liens').onSnapshot(s => { state.liens = toRows(s); renderLinks(); });
   showView(view); render();
 })();
 </script>
